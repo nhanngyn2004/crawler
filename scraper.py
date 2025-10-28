@@ -1,5 +1,6 @@
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin, urldefrag
+from bs4 import BeautifulSoup
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
@@ -15,7 +16,43 @@ def extract_next_links(url, resp):
     #         resp.raw_response.url: the url, again
     #         resp.raw_response.content: the content of the page!
     # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
-    return list()
+    # Implementation: extract links and defragment (remove URL fragments)
+    # Return a list with the hyperlinks (as strings) scraped from resp.raw_response.content
+    if not resp or resp.status != 200 or not getattr(resp, "raw_response", None):
+        return []
+
+    raw = resp.raw_response
+    content = getattr(raw, "content", None)
+    if content is None:
+        return []
+
+    base_url = getattr(raw, "url", None) or resp.url or url
+
+    links = []
+
+    # Parse the HTML content using BeautifulSoup
+    soup = BeautifulSoup(content, "html.parser")
+    # Iterate over all anchor tags ('a') that have an 'href' attribute
+    for tag in soup.find_all("a", href=True):
+        href = tag.get("href")  # Get the href value from the tag
+        if not href:
+            continue  # Skip if href is empty or None
+        # Convert relative URLs to absolute URLs using the base_url
+        absolute = urljoin(base_url, href.strip())
+        # Remove any fragment identifiers (anything after '#') from the URL
+        defragged, _ = urldefrag(absolute)
+        # Add the cleaned URL to the list of links
+        links.append(defragged)
+
+    # Deduplicate while preserving order
+    seen = set()
+    unique_links = []
+    for link in links:
+        if link not in seen:
+            seen.add(link)
+            unique_links.append(link)
+
+    return unique_links
 
 def is_valid(url):
     # Decide whether to crawl this url or not. 
@@ -25,7 +62,28 @@ def is_valid(url):
         parsed = urlparse(url)
         if parsed.scheme not in set(["http", "https"]):
             return False
-        return not re.match(
+        
+        # check if the hostname is in the allowed domains
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+
+        allowed_domains = {
+            "ics.uci.edu",
+            "cs.uci.edu",
+            "informatics.uci.edu",
+            "stat.uci.edu",
+        }
+
+        hostname = hostname.lower()
+        in_scope = any(
+            hostname == domain or hostname.endswith("." + domain)
+            for domain in allowed_domains
+        )
+        if not in_scope:
+            return False
+
+        if re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
             + r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
@@ -33,8 +91,14 @@ def is_valid(url):
             + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
-            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
+            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$",
+            parsed.path.lower(),
+        ):
+            return False
+
+        return True
 
     except TypeError:
         print ("TypeError for ", parsed)
         raise
+
