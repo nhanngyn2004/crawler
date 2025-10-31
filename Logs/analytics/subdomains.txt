@@ -1,0 +1,13 @@
+alderis.ics.uci.edu, 2
+chenli.ics.uci.edu, 2
+cs.ics.uci.edu, 1
+flamingo.ics.uci.edu, 1643
+fr.ics.uci.edu, 1
+futurehealth.ics.uci.edu, 1
+ics.uci.edu, 52
+isg.ics.uci.edu, 41
+unite.ics.uci.edu, 10
+www.cs.uci.edu, 1
+www.ics.uci.edu, 51
+www.informatics.uci.edu, 54
+www.stat.uci.edu, 1
