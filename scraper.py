@@ -7,18 +7,18 @@ from utils.analytics import record_page
 QUERY_PARAM_BLACKLIST = {
     "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
     "gclid", "fbclid", "mc_cid", "mc_eid",
-    "replytocom", "share", "sessionid", "phpsessid", "sid", "sessid",
+    "replytocom", "sessionid", "phpsessid", "sid", "sessid",
     "amp", "amp_html",
 }
 
 TRAP_SUBSTRINGS_PATH = [
     "/calendar", "/ical", "/feed/", "/wp-json", "/wp-admin", "/xmlrpc.php",
-    "/tag/", "/author/", "/comments", "/embed", "/print/", "/share/", "/login",
+    "/tag/", "/author/", "/comments", "/embed", "/print/", "/login",
     "/logout", "/signup", "/cgi-bin", "/redirect",
 ]
 
 TRAP_SUBSTRINGS_QUERY = [
-    "format=xml", "format=amp", "action=", "sort=", "filter=", "feed=",
+    "format=amp", "feed=",
     "C=;O=", "C=N;O=D", "C=M;O=A",
 ]
 
@@ -30,6 +30,8 @@ PAGE_NUM_RE         = re.compile(r"(?:^|[?&])(page|paged|p|start|offset)=\d{3,}(
 MAX_URL_LEN    = 2000
 MAX_QUERY_LEN  = 300
 MAX_SEGMENTS   = 30
+MAX_HTML_BYTES = 2500000  # ~2.5MB
+MIN_TEXT_TOKENS_ALIVE = 20
 
 
 def scraper(url, resp):
@@ -57,22 +59,25 @@ def extract_next_links(url, resp):
     if content is None:
         return []
 
-    # try:
-    #     ctype = raw.headers.get("Content-Type", "").lower()
-    #     if ctype and ("text/html" not in ctype and "application/xhtml+xml" not in ctype):
-    #         return []
-    # except Exception:
-    #     pass
+    # Skip non-HTML content types if header available
+    ctype = raw.headers.get("Content-Type", "")
+    if ctype and ("html" not in ctype.lower()):
+        return []
+
+    # Skip very large HTML responses
+    if len(content) > MAX_HTML_BYTES:
+        return []
+
+    # Parse once, check for dead/empty, and reuse for links + analytics
+    soup = BeautifulSoup(content, "html.parser")
+    page_text = soup.get_text(" ", strip=True)
+    if len(re.findall(r"[A-Za-z0-9']+", page_text)) < MIN_TEXT_TOKENS_ALIVE:
+        return []
 
     # record analytics for this page (never break crawling)
-    try:
-        record_page(resp.url or url, content)
-    except Exception:
-        pass
+    record_page(resp.url or url, page_text)
 
     base_url = getattr(raw, "url", None) or resp.url or url
-
-    soup = BeautifulSoup(content, "html.parser")
     out, seen = [], set()
 
     for tag in soup.find_all("a", href=True):
@@ -134,8 +139,8 @@ def is_valid(url):
 
         # your prior “likely traps / low-value patterns”
         trap_keywords = [
-            "calendar", "ical", "wp-json", "share", "replytocom", "format=xml",
-            "action=", "sessionid", "sort=", "filter=", "feed=", "/feed/",
+            "calendar", "ical", "wp-json", "replytocom",
+            "sessionid", "feed=", "/feed/",
             "\n", "?C=;O=", "?C=N;O=D", "?C=M;O=A"
         ]
         if any(k in low_path or k in low_query for k in trap_keywords):

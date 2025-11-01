@@ -4,8 +4,6 @@ import threading
 from collections import Counter
 from urllib.parse import urldefrag, urlparse
 
-from bs4 import BeautifulSoup
-
 
 _stopwords = {
 	"a","about","above","after","again","against","all","am","an","and","any","are","aren't","as","at",
@@ -48,7 +46,7 @@ class Analytics:
 			if t and t not in _stopwords and any(c.isalpha() for c in t):
 				yield t
 
-	def record_page(self, url: str, html_bytes: bytes):
+	def record_page(self, url: str, page_text: str):
 		if not url:
 			return
 		# defragment URL for uniqueness
@@ -57,21 +55,25 @@ class Analytics:
 		# ignore non-uci domains for subdomain stats
 		host = parsed.hostname or ""
 		with self._lock:
-			self.unique_urls.add(url_no_frag)
-			if host.endswith(".uci.edu"):
-				self.subdomain_counts[host] += 1
+			is_new = url_no_frag not in self.unique_urls
+			if is_new:
+				self.unique_urls.add(url_no_frag)
+				if host.endswith(".uci.edu"):
+					self.subdomain_counts[host] += 1
 
-		# Parse content and update word stats
-		if not html_bytes:
-			return
-		try:
-			soup = BeautifulSoup(html_bytes, "html.parser")
-			text = soup.get_text(" ", strip=True)
-		except Exception:
+		# Update word stats from provided text
+		if not page_text:
 			return
 
-		words = list(self._tokenize(text))
-		word_count = len(words)
+		# tokens for frequency (stopwords removed)
+		words = list(self._tokenize(page_text))
+		# tokens for longest page (no stopword filtering)
+		all_tokens = []
+		for token in _word_re.findall(page_text.lower()):
+			t = token.strip("'")
+			if t and any(c.isalpha() for c in t):
+				all_tokens.append(t)
+		word_count = len(all_tokens)
 		if word_count == 0:
 			return
 		with self._lock:
@@ -109,8 +111,6 @@ class Analytics:
 analytics = Analytics()
 
 
-def record_page(url: str, html_bytes: bytes):
-	analytics.record_page(url, html_bytes)
+def record_page(url: str, page_text: str):
+	analytics.record_page(url, page_text)
 	analytics.write_reports()
-
-
