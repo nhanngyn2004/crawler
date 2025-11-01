@@ -5,11 +5,6 @@ from utils.download import download
 from utils import get_logger
 import scraper
 import time
-from urllib.parse import urlparse
-
-# Per-domain politeness tracking (single-threaded worker)
-_last_fetch_by_host = {}
-
 
 class Worker(Thread):
     def __init__(self, worker_id, config, frontier):
@@ -27,23 +22,6 @@ class Worker(Thread):
             if not tbd_url:
                 self.logger.info("Frontier is empty. Stopping Crawler.")
                 break
-            # Enforce per-domain politeness
-            try:
-                host = (urlparse(tbd_url).hostname or "").lower()
-                now = time.time()
-                last = _last_fetch_by_host.get(host)
-                sleep_needed = 0.0
-                if last is not None:
-                    delta = now - last
-                    need = self.config.time_delay - delta
-                    if need > 0:
-                        sleep_needed = need
-                if sleep_needed > 0:
-                    time.sleep(sleep_needed)
-                # Record start time of this request for the host
-                _last_fetch_by_host[host] = time.time()
-            except Exception:
-                pass
             resp = download(tbd_url, self.config, self.logger)
             self.logger.info(
                 f"Downloaded {tbd_url}, status <{resp.status}>, "
@@ -52,3 +30,4 @@ class Worker(Thread):
             for scraped_url in scraped_urls:
                 self.frontier.add_url(scraped_url)
             self.frontier.mark_url_complete(tbd_url)
+            time.sleep(self.config.time_delay)
