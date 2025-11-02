@@ -27,6 +27,14 @@ LONG_DIGITS_RE      = re.compile(r"\d{6,}")            # very long numeric ids
 YEAR_RE             = re.compile(r"/(19|20)\d{2}(/(0?[1-9]|1[0-2]))?/")
 PAGE_NUM_RE         = re.compile(r"(?:^|[?&])(page|paged|p|start|offset)=\d{3,}(?:&|$)", re.I)
 
+# Calendar/day traps (e.g., The Events Calendar): block date-pivot traversal
+DATE_YYYY_MM_DD_RE     = re.compile(r"/\d{4}-\d{2}-\d{2}(?:/|$)", re.I)
+EVENTS_DAY_DATE_RE     = re.compile(r"/events(?:/[^/]+)?/day/\d{4}-\d{2}-\d{2}(?:/|$)", re.I)
+TRIBE_BAR_DATE_RE      = re.compile(r"(?:^|[?&])tribe-bar-date=\d{4}-\d{2}-\d{2}(?:&|$)", re.I)
+EVENTDISPLAY_RE        = re.compile(r"(?:^|[?&])eventdisplay=(?:past|future|list)(?:&|$)", re.I)
+WP_MONTH_ARCHIVE_QS_RE = re.compile(r"(?:^|[?&])m=(?:19|20)\d{2}(0[1-9]|1[0-2])(?:&|$)")
+GENERIC_DATE_QS_RE     = re.compile(r"(?:^|[?&])(date|start|end|from|to|startdate|enddate|start_date|end_date)=\d{4}-\d{2}-\d{2}(?:&|$)", re.I)
+
 MAX_URL_LEN    = 2000
 MAX_QUERY_LEN  = 300
 MAX_SEGMENTS   = 30
@@ -158,6 +166,30 @@ def is_valid(url):
         if any(s in low_path for s in TRAP_SUBSTRINGS_PATH):
             return False
         if any(s in low_query for s in TRAP_SUBSTRINGS_QUERY):
+            return False
+
+        # Block known events/calendar APIs and date-pivot pages
+        # if "/wp-json/tribe/events" in low_path:
+        #     return False
+
+        # The Events Calendar day views (infinite next/prev day traversal)
+        if EVENTS_DAY_DATE_RE.search(low_path):
+            return False
+
+        # Any YYYY-MM-DD in path under events/calendar is risky
+        if ("events" in low_path or "calendar" in low_path) and DATE_YYYY_MM_DD_RE.search(low_path):
+            return False
+
+        # Query params that drive calendar pagination
+        if TRIBE_BAR_DATE_RE.search(low_query):
+            return False
+        if EVENTDISPLAY_RE.search(low_query):
+            return False
+        if WP_MONTH_ARCHIVE_QS_RE.search(low_query):
+            return False
+
+        # Generic date query params on calendar/events paths
+        if ("events" in low_path or "calendar" in low_path) and GENERIC_DATE_QS_RE.search(low_query):
             return False
 
         # repeated segments pattern
