@@ -169,8 +169,8 @@ def is_valid(url):
             return False
 
         # Block known events/calendar APIs and date-pivot pages
-        # if "/wp-json/tribe/events" in low_path:
-        #     return False
+        if "/wp-json/tribe/events" in low_path:
+            return False
 
         # The Events Calendar day views (infinite next/prev day traversal)
         if EVENTS_DAY_DATE_RE.search(low_path):
